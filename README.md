@@ -92,4 +92,18 @@ integration's options and check "Re-run the full year-to-date backfill".
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Licensed under the [GNU General Public License v3.0](LICENSE) — if you
+distribute a modified version of this integration, GPLv3 requires that you
+also make your modified source available under the same license.
+
+    Copyright (C) 2026 Joe Ross
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+This project depends on (but does not bundle) the MIT-licensed
+[`lacrosse-view`](https://github.com/IceBotYT/lacrosse_view) library,
+installed automatically via `manifest.json` `requirements`. MIT is
+permissive and compatible with GPLv3.
