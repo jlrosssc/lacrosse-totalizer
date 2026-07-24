@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LaCrosse View account",
+        "description": "Enter the LaCrosse View credentials for the account that owns your rain gauge.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "location": {
+        "title": "Select location",
+        "data": {
+          "location_id": "Location"
+        }
+      },
+      "device": {
+        "title": "Select rain gauge",
+        "data": {
+          "device_name": "Device"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "cannot_connect": "Could not connect to LaCrosse View.",
+      "no_locations": "No locations found on this account.",
+      "no_rain_devices": "No devices with a Rain field were found at this location.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "LaCrosse Rain Totalizer options",
+        "data": {
+          "rerun_backfill": "Re-run the full year-to-date backfill"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "hourly": { "name": "Rain (current hour)" },
+      "calendar_daily": { "name": "Rain (today, calendar day)" },
+      "rolling_24h": { "name": "Rain (rolling 24 hours)" },
+      "monthly": { "name": "Rain (this month)" },
+      "yearly": { "name": "Rain (this year)" },
+      "rolling_3day": { "name": "Rain (rolling 3 days)" }
+    }
+  }
+}

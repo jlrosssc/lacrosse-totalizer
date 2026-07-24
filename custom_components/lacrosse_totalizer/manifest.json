@@ -1,0 +1,12 @@
+{
+  "domain": "lacrosse_totalizer",
+  "name": "LaCrosse Rain Totalizer",
+  "codeowners": ["@jlrosssc"],
+  "config_flow": true,
+  "documentation": "https://github.com/jlrosssc/lacrosse-totalizer",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/jlrosssc/lacrosse-totalizer/issues",
+  "requirements": ["lacrosse-view>=1.1.2"],
+  "version": "1.0.0"
+}
