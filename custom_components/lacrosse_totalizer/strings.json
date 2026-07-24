@@ -70,7 +70,8 @@
       "windspeed_max_yearly": { "name": "Wind speed max (this year)" },
       "windspeed_min_yearly": { "name": "Wind speed min (this year)" },
       "windspeed_max_rolling_3day": { "name": "Wind speed max (rolling 3 days)" },
-      "windspeed_min_rolling_3day": { "name": "Wind speed min (rolling 3 days)" }
+      "windspeed_min_rolling_3day": { "name": "Wind speed min (rolling 3 days)" },
+      "windspeed_current": { "name": "Wind speed (current)" }
     }
   }
 }

@@ -1,8 +1,9 @@
 # LaCrosse Rain Totalizer
 
 A Home Assistant custom integration that produces **accurate** rainfall
-totals from a LaCrosse View rain gauge — hourly, today (calendar day),
-rolling 24 hours, this month, this year, and rolling 3 days.
+totals and wind speed extremes from a LaCrosse View weather station —
+hourly, today (calendar day), rolling 24 hours, this month, this year, and
+rolling 3 days.
 
 ## The problem this solves
 
@@ -30,17 +31,29 @@ and match your LaCrosse app's own totals.
 
 ## What you get
 
-Six sensors per configured rain gauge, each independently and exactly
-computed from the tick log:
+Six window sensors per configured field, each independently and exactly
+computed from the tick log — rain is summed (each tick is a discrete
+gauge-tip amount), wind speed is tracked as max **and** min (each tick is
+an instantaneous reading, so a window's true peak/lull is the extreme of
+the readings in it, not their sum):
 
-| Entity | Resets |
+| Window | Resets |
 |---|---|
-| Rain (current hour) | top of the clock hour |
-| Rain (today, calendar day) | local midnight |
-| Rain (rolling 24 hours) | rolling window, matches the LaCrosse app's "24 hour" total |
-| Rain (this month) | 1st of the month |
-| Rain (this year) | January 1 |
-| Rain (rolling 3 days) | rolling window |
+| Current hour | top of the clock hour |
+| Today (calendar day) | local midnight |
+| Rolling 24 hours | rolling window, matches the LaCrosse app's "24 hour" total |
+| This month | 1st of the month |
+| This year | January 1 |
+| Rolling 3 days | rolling window |
+
+Wind speed also gets a **current value** sensor that replays every new
+tick as its own state update, in order — not a window aggregate, but the
+real deduplicated reading sequence. This matters for anything that samples
+a mapped entity's state history and averages it itself (Smart Irrigation's
+`Windspeed` mapping, for example): a 60-second poll of the built-in
+integration's live value can repeat a stale reading or miss a brief gust
+between polls, which quietly skews that kind of average. Feeding it the
+actual tick sequence instead removes that error at the source.
 
 On first setup, the integration does a small 25-hour backfill immediately
 so sensors have sensible values right away, then kicks off a one-time
@@ -70,9 +83,10 @@ Copy `custom_components/lacrosse_totalizer` into your Home Assistant
 
 Settings → Devices & Services → Add Integration → "LaCrosse Rain
 Totalizer". You'll be asked for your LaCrosse View account email/password,
-then to pick the location and the specific rain gauge (any device exposing
-a `Rain` field). Repeat for additional gauges/locations — each gets its own
-config entry, own device, and own local database.
+then to pick the location and the specific device, then which supported
+fields to track (Rain, wind speed, or both — only fields your device
+actually reports are offered). Repeat for additional devices/locations —
+each gets its own config entry, own device, and own local database.
 
 To re-run the full year backfill later (e.g. after a long outage), open the
 integration's options and check "Re-run the full year-to-date backfill".

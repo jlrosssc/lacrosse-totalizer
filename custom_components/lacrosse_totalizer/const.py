@@ -31,6 +31,16 @@ SQL_AGGREGATE_FUNCTIONS = {
     "min": "MIN",
 }
 
+# Fields that also get a "current value" sensor which replays each new tick
+# as its own state update (not just window aggregates). This matters for
+# consumers like Smart Irrigation that sample a mapped entity's own state
+# history and average it themselves -- feeding them the real, deduplicated
+# tick sequence (instead of a 60-second snapshot poll that can repeat a
+# stale reading or miss a brief gust) gives their own averaging genuinely
+# better raw material. Rain doesn't need this: its consumers want a
+# pre-summed total, not a raw sample stream.
+FIELDS_WITH_CURRENT_SENSOR = [FIELD_WIND_SPEED]
+
 SCAN_INTERVAL_MINUTES = 5
 INITIAL_LOOKBACK_HOURS = 25
 BACKFILL_CHUNK_DAYS = 14

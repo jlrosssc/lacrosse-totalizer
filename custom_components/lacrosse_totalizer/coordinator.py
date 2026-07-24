@@ -64,6 +64,10 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         self._db_path = f"{db_dir}/{entry.entry_id}.sqlite"
         self._api_lock = asyncio.Lock()
         self._backfill_task: asyncio.Task | None = None
+        # Raw ticks fetched by the most recent update, keyed by field --
+        # consumed by "current value" sensors to replay each real reading
+        # as its own state update. Reset at the start of every update.
+        self.new_ticks_by_field: dict[str, list[dict]] = {}
 
     async def async_config_entry_first_refresh(self) -> None:
         """Set up the local database, then run the first refresh."""
@@ -107,21 +111,24 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
 
     def _insert_ticks(
         self, conn: sqlite3.Connection, ticks_by_field: dict[str, list[dict]]
-    ) -> int:
+    ) -> tuple[int, dict[str, list[dict]]]:
         max_ts = 0
+        new_ticks_by_field: dict[str, list[dict]] = {}
         for field, ticks in ticks_by_field.items():
             for tick in ticks:
                 ts = tick.get("u")
                 val = tick.get("s")
                 if ts is None or val is None:
                     continue
-                conn.execute(
+                cur = conn.execute(
                     "INSERT OR IGNORE INTO ticks (ts, field, value) VALUES (?, ?, ?)",
                     (ts, field, val),
                 )
+                if cur.rowcount:
+                    new_ticks_by_field.setdefault(field, []).append(tick)
                 max_ts = max(max_ts, ts)
         conn.commit()
-        return max_ts
+        return max_ts, new_ticks_by_field
 
     def _compute_totals(self, conn: sqlite3.Connection) -> dict[str, float]:
         totals: dict[str, float] = {}
@@ -181,16 +188,17 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         except HTTPError as err:
             raise UpdateFailed(f"Error fetching LaCrosse tick history: {err}") from err
 
-        def _apply() -> dict[str, float]:
+        def _apply() -> tuple[dict[str, float], dict[str, list[dict]]]:
             conn = sqlite3.connect(self._db_path)
             try:
-                max_ts = self._insert_ticks(conn, ticks_by_field)
+                max_ts, new_ticks_by_field = self._insert_ticks(conn, ticks_by_field)
                 self._set_meta(conn, "last_ts", str(max(max_ts, end_ts - 60)))
-                return self._compute_totals(conn)
+                return self._compute_totals(conn), new_ticks_by_field
             finally:
                 conn.close()
 
-        return await self.hass.async_add_executor_job(_apply)
+        totals, self.new_ticks_by_field = await self.hass.async_add_executor_job(_apply)
+        return totals
 
     async def async_request_backfill(self) -> None:
         """Manually (re)trigger the deep year-start backfill."""
