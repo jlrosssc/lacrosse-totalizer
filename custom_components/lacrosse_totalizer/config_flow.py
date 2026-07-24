@@ -11,15 +11,16 @@ from lacrosse_view import LaCrosse, LoginError, HTTPError
 from homeassistant import config_entries
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_DEVICE_NAME,
-    CONF_FIELD,
+    CONF_FIELDS,
     CONF_LOCATION_ID,
     CONF_LOCATION_NAME,
-    DEFAULT_FIELD,
     DOMAIN,
+    SUPPORTED_FIELDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ class LacrosseTotalizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._location_id: str | None = None
         self._location_name: str | None = None
         self._devices: list[Any] = []
+        self._device_name: str | None = None
+        self._device_fields: list[str] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -108,12 +111,12 @@ class LacrosseTotalizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     d
                     for d in self._devices
                     if any(
-                        f.lower() == DEFAULT_FIELD.lower()
+                        f.lower() in (sf.lower() for sf in SUPPORTED_FIELDS)
                         for f in d.sensor_field_names
                     )
                 ]
                 if not self._devices:
-                    errors["base"] = "no_rain_devices"
+                    errors["base"] = "no_supported_devices"
                 else:
                     return await self.async_step_device()
 
@@ -130,30 +133,66 @@ class LacrosseTotalizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle device selection."""
         if user_input is not None:
-            device_name = user_input[CONF_DEVICE_NAME]
-
-            await self.async_set_unique_id(
-                f"{self._location_id}:{device_name}:{DEFAULT_FIELD}"
-            )
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=f"{device_name} ({self._location_name}) Rain Totalizer",
-                data={
-                    CONF_USERNAME: self._username,
-                    CONF_PASSWORD: self._password,
-                    CONF_LOCATION_ID: self._location_id,
-                    CONF_LOCATION_NAME: self._location_name,
-                    CONF_DEVICE_NAME: device_name,
-                    CONF_FIELD: DEFAULT_FIELD,
-                },
-            )
+            self._device_name = user_input[CONF_DEVICE_NAME]
+            return await self.async_step_fields()
 
         device_options = {d.name: d.name for d in self._devices}
         schema = vol.Schema(
             {vol.Required(CONF_DEVICE_NAME): vol.In(device_options)}
         )
         return self.async_show_form(step_id="device", data_schema=schema)
+
+    async def async_step_fields(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle field selection (Rain, wind speed, or both)."""
+        device = next(d for d in self._devices if d.name == self._device_name)
+        available_fields = [
+            field
+            for field in SUPPORTED_FIELDS
+            if field.lower() in (sf.lower() for sf in device.sensor_field_names)
+        ]
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            fields = user_input[CONF_FIELDS]
+            if not fields:
+                errors["base"] = "no_fields_selected"
+            else:
+                await self.async_set_unique_id(
+                    f"{self._location_id}:{self._device_name}"
+                )
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"{self._device_name} ({self._location_name}) Totalizer",
+                    data={
+                        CONF_USERNAME: self._username,
+                        CONF_PASSWORD: self._password,
+                        CONF_LOCATION_ID: self._location_id,
+                        CONF_LOCATION_NAME: self._location_name,
+                        CONF_DEVICE_NAME: self._device_name,
+                        CONF_FIELDS: fields,
+                    },
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_FIELDS, default=available_fields): selector.selector(
+                    {
+                        "select": {
+                            "options": available_fields,
+                            "multiple": True,
+                            "mode": "list",
+                        }
+                    }
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="fields", data_schema=schema, errors=errors
+        )
 
     @staticmethod
     @callback

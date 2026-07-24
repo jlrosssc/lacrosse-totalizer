@@ -8,26 +8,26 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPrecipitationDepth
+from homeassistant.const import UnitOfPrecipitationDepth, UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_NAME, CONF_LOCATION_NAME, DOMAIN, METRICS
+from .const import CONF_DEVICE_NAME, CONF_LOCATION_NAME, DOMAIN, FIELD_RAIN, FIELD_WIND_SPEED
 from .coordinator import LacrosseTotalizerCoordinator
 
-SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = tuple(
-    SensorEntityDescription(
-        key=key,
-        translation_key=translation_key,
-        native_unit_of_measurement=UnitOfPrecipitationDepth.INCHES,
-        device_class=SensorDeviceClass.PRECIPITATION,
-        state_class=SensorStateClass.MEASUREMENT,
-    )
-    for key, translation_key, _where_clause in METRICS
-)
+_FIELD_SENSOR_PROPS = {
+    FIELD_RAIN: {
+        "native_unit_of_measurement": UnitOfPrecipitationDepth.INCHES,
+        "device_class": SensorDeviceClass.PRECIPITATION,
+    },
+    FIELD_WIND_SPEED: {
+        "native_unit_of_measurement": UnitOfSpeed.MILES_PER_HOUR,
+        "device_class": SensorDeviceClass.WIND_SPEED,
+    },
+}
 
 
 async def async_setup_entry(
@@ -38,16 +38,26 @@ async def async_setup_entry(
     """Set up LaCrosse Rain Totalizer sensors from a config entry."""
     coordinator: LacrosseTotalizerCoordinator = hass.data[DOMAIN][entry.entry_id]
 
+    descriptions = [
+        SensorEntityDescription(
+            key=metric["key"],
+            translation_key=metric["translation_key"],
+            state_class=SensorStateClass.MEASUREMENT,
+            **_FIELD_SENSOR_PROPS[metric["field"]],
+        )
+        for metric in coordinator.metrics
+    ]
+
     async_add_entities(
         LacrosseTotalizerSensor(coordinator, entry, description)
-        for description in SENSOR_DESCRIPTIONS
+        for description in descriptions
     )
 
 
 class LacrosseTotalizerSensor(
     CoordinatorEntity[LacrosseTotalizerCoordinator], SensorEntity
 ):
-    """Representation of a corrected LaCrosse rainfall total."""
+    """Representation of a single corrected LaCrosse metric."""
 
     _attr_has_entity_name = True
 
@@ -69,7 +79,7 @@ class LacrosseTotalizerSensor(
 
     @property
     def native_value(self) -> float | None:
-        """Return the current total for this metric."""
+        """Return the current value for this metric."""
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get(self.entity_description.key)

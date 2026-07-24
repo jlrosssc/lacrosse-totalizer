@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "LaCrosse View account",
-        "description": "Enter the LaCrosse View credentials for the account that owns your rain gauge.",
+        "description": "Enter the LaCrosse View credentials for the account that owns your weather station.",
         "data": {
           "username": "Email",
           "password": "Password"
@@ -16,9 +16,16 @@
         }
       },
       "device": {
-        "title": "Select rain gauge",
+        "title": "Select device",
         "data": {
           "device_name": "Device"
+        }
+      },
+      "fields": {
+        "title": "Select measurements",
+        "description": "Choose which measurements to track accurately for this device. Rain is totaled (sum); wind speed is tracked as true highs/lows (max/min), since a single averaged reading can hide the real peak gust.",
+        "data": {
+          "fields": "Measurements"
         }
       }
     },
@@ -26,7 +33,8 @@
       "invalid_auth": "Invalid username or password.",
       "cannot_connect": "Could not connect to LaCrosse View.",
       "no_locations": "No locations found on this account.",
-      "no_rain_devices": "No devices with a Rain field were found at this location.",
+      "no_supported_devices": "No devices with a Rain or wind speed field were found at this location.",
+      "no_fields_selected": "Select at least one measurement.",
       "unknown": "Unexpected error."
     },
     "abort": {
@@ -50,7 +58,19 @@
       "rolling_24h": { "name": "Rain (rolling 24 hours)" },
       "monthly": { "name": "Rain (this month)" },
       "yearly": { "name": "Rain (this year)" },
-      "rolling_3day": { "name": "Rain (rolling 3 days)" }
+      "rolling_3day": { "name": "Rain (rolling 3 days)" },
+      "windspeed_max_hourly": { "name": "Wind speed max (current hour)" },
+      "windspeed_min_hourly": { "name": "Wind speed min (current hour)" },
+      "windspeed_max_calendar_daily": { "name": "Wind speed max (today, calendar day)" },
+      "windspeed_min_calendar_daily": { "name": "Wind speed min (today, calendar day)" },
+      "windspeed_max_rolling_24h": { "name": "Wind speed max (rolling 24 hours)" },
+      "windspeed_min_rolling_24h": { "name": "Wind speed min (rolling 24 hours)" },
+      "windspeed_max_monthly": { "name": "Wind speed max (this month)" },
+      "windspeed_min_monthly": { "name": "Wind speed min (this month)" },
+      "windspeed_max_yearly": { "name": "Wind speed max (this year)" },
+      "windspeed_min_yearly": { "name": "Wind speed min (this year)" },
+      "windspeed_max_rolling_3day": { "name": "Wind speed max (rolling 3 days)" },
+      "windspeed_min_rolling_3day": { "name": "Wind speed min (rolling 3 days)" }
     }
   }
 }

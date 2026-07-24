@@ -19,27 +19,29 @@ from .const import (
     BACKFILL_CHUNK_DAYS,
     BACKFILL_SLEEP_SECONDS,
     CONF_DEVICE_NAME,
-    CONF_FIELD,
+    CONF_FIELDS,
     CONF_LOCATION_ID,
     CONF_LOCATION_NAME,
     INITIAL_LOOKBACK_HOURS,
-    METRICS,
     SCAN_INTERVAL_MINUTES,
+    SQL_AGGREGATE_FUNCTIONS,
+    build_metrics,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
-    """Fetches LaCrosse tick history and computes accurate rainfall totals.
+    """Fetches LaCrosse tick history and computes accurate totals/extremes.
 
-    Unlike the built-in lacrosse_view integration (which polls a live "current
-    value" snapshot every 60 seconds and can silently drop or double-count
-    rain during bursts of activity), this coordinator queries LaCrosse's own
-    tick-history endpoint for the exact set of gauge tips since the last
-    checkpoint. Every tip is timestamped and durably logged by LaCrosse's
-    cloud as it happens, so asking "what tipped between time A and time B"
-    is always exact, regardless of how often this coordinator runs.
+    Unlike the built-in lacrosse_view integration (which polls a live
+    "current value" snapshot every 60 seconds and can silently drop or
+    double-count events during bursts of activity), this coordinator
+    queries LaCrosse's own tick-history endpoint for the exact readings
+    recorded since the last checkpoint. Every reading is timestamped and
+    durably logged by LaCrosse's cloud as it happens, so asking "what was
+    recorded between time A and time B" is always exact, regardless of how
+    often this coordinator runs.
     """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -55,7 +57,8 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         self.location_id = entry.data[CONF_LOCATION_ID]
         self.location_name = entry.data[CONF_LOCATION_NAME]
         self.device_name = entry.data[CONF_DEVICE_NAME]
-        self.field = entry.data[CONF_FIELD]
+        self.fields: list[str] = entry.data[CONF_FIELDS]
+        self.metrics = build_metrics(self.fields)
 
         db_dir = hass.config.path("lacrosse_totalizer")
         self._db_path = f"{db_dir}/{entry.entry_id}.sqlite"
@@ -76,8 +79,10 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS ticks (
-                ts INTEGER PRIMARY KEY,
-                rain_in REAL NOT NULL
+                ts INTEGER NOT NULL,
+                field TEXT NOT NULL,
+                value REAL NOT NULL,
+                PRIMARY KEY (ts, field)
             );
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
@@ -100,46 +105,58 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         )
         conn.commit()
 
-    def _insert_ticks(self, conn: sqlite3.Connection, ticks: list[dict]) -> int:
-        inserted = 0
+    def _insert_ticks(
+        self, conn: sqlite3.Connection, ticks_by_field: dict[str, list[dict]]
+    ) -> int:
         max_ts = 0
-        for tick in ticks:
-            ts = tick.get("u")
-            val = tick.get("s")
-            if ts is None or val is None:
-                continue
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO ticks (ts, rain_in) VALUES (?, ?)", (ts, val)
-            )
-            inserted += cur.rowcount
-            max_ts = max(max_ts, ts)
+        for field, ticks in ticks_by_field.items():
+            for tick in ticks:
+                ts = tick.get("u")
+                val = tick.get("s")
+                if ts is None or val is None:
+                    continue
+                conn.execute(
+                    "INSERT OR IGNORE INTO ticks (ts, field, value) VALUES (?, ?, ?)",
+                    (ts, field, val),
+                )
+                max_ts = max(max_ts, ts)
         conn.commit()
         return max_ts
 
     def _compute_totals(self, conn: sqlite3.Connection) -> dict[str, float]:
         totals: dict[str, float] = {}
-        for key, _translation_key, where_clause in METRICS:
+        for metric in self.metrics:
+            sql_func = SQL_AGGREGATE_FUNCTIONS[metric["aggregate"]]
             value = conn.execute(
-                f"SELECT COALESCE(SUM(rain_in), 0) FROM ticks WHERE {where_clause}"
+                f"SELECT {sql_func}(value) FROM ticks "
+                f"WHERE field = ? AND {metric['where_clause']}",
+                (metric["field"],),
             ).fetchone()[0]
-            totals[key] = round(value, 4)
+            totals[metric["key"]] = round(value, 4) if value is not None else None
         return totals
 
-    async def _fetch_ticks(self, start_ts: int, end_ts: int) -> list[dict]:
+    async def _fetch_ticks(
+        self, start_ts: int, end_ts: int
+    ) -> dict[str, list[dict]]:
         async with self._api_lock:
             session = async_get_clientsession(self.hass)
             api = LaCrosse(session)
             await api.login(self.username, self.password)
             location = Location(id=self.location_id, name=self.location_name)
             sensors = await api.get_sensors(
-                location, tz=str(self.hass.config.time_zone), start=str(start_ts), end=str(end_ts)
+                location,
+                tz=str(self.hass.config.time_zone),
+                start=str(start_ts),
+                end=str(end_ts),
             )
         for sensor in sensors:
             if sensor.name == self.device_name and sensor.data:
-                field_data = sensor.data.get(self.field)
-                if field_data:
-                    return field_data.get("values", [])
-        return []
+                return {
+                    field: sensor.data[field].get("values", [])
+                    for field in self.fields
+                    if field in sensor.data
+                }
+        return {}
 
     async def _async_update_data(self) -> dict[str, float]:
         def _read_checkpoint() -> int:
@@ -156,10 +173,10 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         end_ts = int(time.time())
 
         try:
-            ticks = (
+            ticks_by_field = (
                 await self._fetch_ticks(start_ts, end_ts)
                 if end_ts - start_ts >= 5
-                else []
+                else {}
             )
         except HTTPError as err:
             raise UpdateFailed(f"Error fetching LaCrosse tick history: {err}") from err
@@ -167,7 +184,7 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         def _apply() -> dict[str, float]:
             conn = sqlite3.connect(self._db_path)
             try:
-                max_ts = self._insert_ticks(conn, ticks)
+                max_ts = self._insert_ticks(conn, ticks_by_field)
                 self._set_meta(conn, "last_ts", str(max(max_ts, end_ts - 60)))
                 return self._compute_totals(conn)
             finally:
@@ -219,7 +236,7 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
         while cursor < backfill_end:
             chunk_end = min(cursor + chunk_seconds, backfill_end)
             try:
-                ticks = await self._fetch_ticks(cursor, chunk_end)
+                ticks_by_field = await self._fetch_ticks(cursor, chunk_end)
             except HTTPError:
                 _LOGGER.warning(
                     "LaCrosse backfill chunk failed (%s -> %s), will retry next time",
@@ -228,10 +245,10 @@ class LacrosseTotalizerCoordinator(DataUpdateCoordinator[dict[str, float]]):
                 )
                 return
 
-            def _store(ticks=ticks, chunk_end=chunk_end) -> None:
+            def _store(ticks_by_field=ticks_by_field, chunk_end=chunk_end) -> None:
                 conn = sqlite3.connect(self._db_path)
                 try:
-                    self._insert_ticks(conn, ticks)
+                    self._insert_ticks(conn, ticks_by_field)
                     self._set_meta(conn, "backfill_progress_ts", str(chunk_end))
                 finally:
                     conn.close()
